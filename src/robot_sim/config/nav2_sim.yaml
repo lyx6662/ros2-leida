@@ -118,17 +118,15 @@ local_costmap:
       height: 6
       resolution: 0.05
       robot_radius: 0.35
-      plugins: ["voxel_layer", "inflation_layer"]
-      voxel_layer:
-        plugin: "nav2_costmap_2d::VoxelLayer"
+      # 2D 栅格障碍层(原 VoxelLayer 已弃用)
+      # 原因:VoxelLayer 是 3D 体素,清除时只有"被 3D 射线真正穿过"的体素才会被清,
+      #      人员上半身(1.0~1.8m)标记的体素在人走后没有任何射线能穿过 → 永久残留,
+      #      会导致 DWB 无意义绕路,严重时堵死通道触发 spin/backup 恢复行为。
+      #      ObstacleLayer 的清除在 XY 平面做直线,射线掠过即清整列,与高度无关。
+      plugins: ["obstacle_layer", "inflation_layer"]
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: true
-        publish_voxel_map: true
-        origin_z: 0.0
-        z_resolution: 0.25
-        z_voxels: 8
-        max_obstacle_height: 2.0
-        unknown_threshold: 15
-        mark_threshold: 0
         observation_sources: livox
         livox:
           topic: /cloud_body_filtered   # 去重后的实时点云(原/livox/lidar已改CustomMsg)
@@ -141,7 +139,7 @@ local_costmap:
           obstacle_max_range: 4.0
           obstacle_min_range: 0.3
           raytrace_max_range: 6.0
-          raytrace_min_range: 0.3
+          raytrace_min_range: 0.05     # 原 0.3:车体 0.3m 内完全不清理,贴身走过的痕迹清不掉
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 6.0

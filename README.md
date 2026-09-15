@@ -48,7 +48,7 @@
         │                    Nav2 导航栈                        │
         │  global_costmap: StaticLayer(/nav_map) + ObstacleLayer│
         │                  frame=map   44×44m 固定             │
-        │  local_costmap : VoxelLayer                           │
+        │  local_costmap : ObstacleLayer                           │
         │                  frame=odom  6×6m 滚动窗口            │
         │  planner=NavFn   controller=DWB(全向)  行为树恢复      │
         └───────────────────────┬──────────────────────────────┘
@@ -280,7 +280,7 @@ map ──(静态恒等, 过渡方案)──> odom ──(FAST-LIO)──> base_
 |---|---|---|
 | 坐标系 | `odom` | `map` |
 | 范围 | 6×6m **滚动窗口** | 44×44m 固定 |
-| 图层 | `VoxelLayer` (3D) + `InflationLayer` | `StaticLayer` + `ObstacleLayer` (2D) + `InflationLayer` |
+| 图层 | `ObstacleLayer` (2D) + `InflationLayer` | `StaticLayer` + `ObstacleLayer` (2D) + `InflationLayer` |
 | 更新频率 | 5 Hz | 1 Hz |
 | 观测源 | `/cloud_body_filtered` | `/cloud_body_filtered` |
 | 用途 | DWB 局部避障 | NavFn 全局规划 |
@@ -324,9 +324,9 @@ ros2 param set /global_costmap/global_costmap static_layer.enabled true
 |---|---|---|---|
 | 1 | `bond_timeout: 4.0` 高负载误判 | 日志 `CRITICAL FAILURE: SERVER xxx IS DOWN after not receiving a heartbeat for 4000 ms`，触发 reset；若此时按 Ctrl-C，`lifecycle_manager` 会**卡死在 preshutdown**，85% CPU 空转且 SIGTERM 杀不掉（只能 `kill -9`）。多个僵尸 manager 同名抢节点后会连锁导致整个 Nav2 起不来 | 调到 `10.0`，或设 `0.0` 关闭 bond（单机不需要它做故障恢复） |
 | 2 | `stop_slam.sh` 只杀外层进程 | `pkill -f "ros2 run robot_sim map_manager"` 和 `pkill -f "nav2_sim.launch"` 杀不到实际子进程，会留下孤儿 | 改成按完整路径匹配，如 `pkill -f "lib/robot_sim/map_manager"` |
-| 3 | `local_costmap` 用 3D `VoxelLayer` | 人员/移动物体走过之后障碍**永久残留**：3D 射线只清除被它穿过的体素，人员上半身标记的体素在人走后没有射线能穿到，永远清不掉 | 改用 2D `ObstacleLayer`（清除与高度无关），或把 `max_obstacle_height` 压到 1.0m |
-| 4 | `raytrace_min_range: 0.3` | 车体 0.3m 内完全不执行清除，贴车走过的痕迹清不掉 | 改成 `0.05` |
-| 5 | `unknown_threshold: 15` 配 `z_voxels: 8` | 一列最多只有 8 个未知体素，阈值 15 **永远不生效**，属参数错配 | `z_voxels: 16` 或 `unknown_threshold: 0` |
+| 3 | ~~`local_costmap` 用 3D `VoxelLayer`~~ **已修复** | 人员/移动物体走过之后障碍**永久残留**：3D 射线只清除被它穿过的体素，人员上半身标记的体素在人走后没有射线能穿到，永远清不掉 | ✅ 已改为 2D `ObstacleLayer`，清除在 XY 平面做直线，与高度无关 |
+| 4 | ~~`raytrace_min_range: 0.3`~~ **已修复** | 车体 0.3m 内完全不执行清除，贴车走过的痕迹清不掉 | ✅ 已改为 `0.05` |
+| 5 | ~~`unknown_threshold: 15` 配 `z_voxels: 8`~~ **已弃用** | 一列最多只有 8 个未知体素，阈值 15 **永远不生效**，属参数错配 | ✅ VoxelLayer 已弃用，相关参数一并删除 |
 | 6 | `track_unknown_space: false` | 未观测区域被当作**自由空间**，车刚转向、雷达还没扫到的格子会先被判为可通行 | 视需要改为 `true` |
 | 7 | `cloud_filter.py` 队列深度 10 | 系统卡顿时积压旧点云，触发 tf2 `Message Filter dropping message ... timestamp earlier than all the data in the transform cache` | 订阅/发布的 depth 改为 `1` |
 | 8 | global costmap 实测 0.33~0.5 Hz | 配置是 1.0 Hz，高负载（RViz 软件渲染占 120%+ CPU）时被拖慢，对动态障碍响应迟钝 | 跑导航时关掉 RViz；或 `update_frequency`/`publish_frequency` 提到 2.0 |
