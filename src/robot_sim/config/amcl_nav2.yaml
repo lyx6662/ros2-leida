@@ -1,0 +1,101 @@
+# ═══════════════════════════════════════════════════════════════
+# AMCL 定位配置 —— 替代 map→odom 的静态恒等变换
+# ═══════════════════════════════════════════════════════════════
+#
+# 数据链:
+#   /cloud_body_filtered  (base_footprint 系点云, 来自 FAST-LIO + cloud_filter)
+#        │
+#        ▼  cloud_to_scan  切 z 高度带, 投影成 2D 激光扫描
+#   /scan
+#        │
+#        ▼  nav2_amcl     与 /nav_map 做似然场匹配
+#   TF: map → odom            ★ 从此由 AMCL 实时发布, 不再是静态恒等
+#
+# 前置条件(缺一不可):
+#   1) map_manager 已 load_latest, /nav_map 正在发布
+#      ros2 topic hz /nav_map      → 约 1Hz
+#   2) 静态 map→odom 的发布者已停掉
+#      否则两个发布者抢同一个 TF, 会报 TF_REPEATED_DATA, 位姿来回跳
+#   3) /scan 有数据
+#      ros2 topic hz /scan         → 约 10Hz
+#
+# 使用方式(机器人不在建图起点时):
+#   方式一(推荐): RViz 里用 "2D Pose Estimate" 点一下机器人实际位置和朝向
+#   方式二: 调全局重定位服务, 让粒子撒满整张地图, 然后让车走几米自然收敛
+#       ros2 service call /reinitialize_global_localization std_srvs/srv/Empty
+#   ⚠️ AMCL 是 2D 粒子滤波, 初始位姿误差过大时需要"移动一段距离"才能收敛,
+#      且环境高度对称时可能收敛到错误位置 —— 这是算法固有局限, 不是配置问题
+
+amcl:
+  ros__parameters:
+    use_sim_time: false
+
+    # ───────────── 坐标系 ─────────────
+    global_frame_id: map
+    odom_frame_id: odom
+    base_frame_id: base_footprint
+    tf_broadcast: true          # ★ 由 AMCL 发布 map→odom (本方案的核心开关)
+
+    # ───────────── 地图来源 ─────────────
+    # 必须与 planner 的 static_layer 用同一张图(/nav_map), 否则
+    # "AMCL 认为的位姿" 和 "规划器看到的地图" 会脱节。
+    #
+    # 不要用 nav2 默认的 map(= /map): 那是 map_manager 发布的实时去噪栅格
+    # (约 2268 个占据格), 与导航存档图 /nav_map(约 5057 格)内容并不相同。
+    map_topic: nav_map
+    # /nav_map 是 latched 的, 且 map_manager 每秒重发一次(每次带新时间戳)。
+    # 不加限制时 AMCL 会把重发误判成"地图更新了", 反复重建似然场并重置粒子滤波,
+    # 导致定位一直在原地重新收敛。导航用的是静态存档图, 订阅到第一张就够。
+    first_map_only: true
+
+    # ───────────── 运动模型 ─────────────
+    # 四轮四转底盘可全向运动, 与 DWB 的 motion_model: omni 保持一致
+    # 若换成差速底盘, 改成 "nav2_amcl::DifferentialMotionModel"
+    robot_model_type: "nav2_amcl::OmniMotionModel"
+    # 里程计噪声系数。FAST-LIO 的 odom 质量很好, 理论上可以调小,
+    # 但保留 nav2 默认值, 以便匹配失败后还能靠粒子扩散恢复
+    alpha1: 0.2
+    alpha2: 0.2
+    alpha3: 0.2
+    alpha4: 0.2
+    alpha5: 0.2
+
+    # ───────────── 激光模型 ─────────────
+    scan_topic: scan
+    # 点云投影出来的扫描非常稠密(720 束几乎无空洞), 用似然场模型最稳;
+    # beam 模型对这种"密集墙"容易误判
+    laser_model_type: "likelihood_field"
+    laser_max_range: 10.0       # 与 cloud_to_scan 的 range_max 保持一致
+    laser_min_range: -1.0       # -1 = 用扫描自带的 range_min
+    max_beams: 120              # 720 束里抽 120 束参与评分, 兼顾精度与 CPU
+    sigma_hit: 0.2
+    z_hit: 0.5
+    z_rand: 0.5
+    z_max: 0.05
+    z_short: 0.05
+    lambda_short: 0.1
+    laser_likelihood_max_dist: 2.0
+
+    # ───────────── 粒子滤波 ─────────────
+    min_particles: 500
+    max_particles: 3000
+    pf_err: 0.05
+    pf_z: 0.99
+    resample_interval: 1
+    # 关闭自适应恢复: 巡检场景是已知地图, 不需要从"机器人被绑架"中恢复
+    recovery_alpha_slow: 0.0
+    recovery_alpha_fast: 0.0
+
+    # ───────────── 更新触发条件 ─────────────
+    update_min_d: 0.25          # 平移超过 0.25m 才做一次滤波更新
+    update_min_a: 0.2           # 旋转超过 0.2rad 才做一次滤波更新
+    transform_tolerance: 0.5    # VM 上 DDS 抖动大, 放宽以避免 TF 超前报错
+    save_pose_rate: 0.5
+    set_initial_pose: true
+    # 默认初值 = 地图原点(即建图起点)。
+    # 如果机器人停在别处, 靠 RViz 的 2D Pose Estimate 或全局重定位服务修正
+    initial_pose:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      yaw: 0.0

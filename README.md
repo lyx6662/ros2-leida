@@ -85,16 +85,19 @@ ros2_ws/
 │       │   └── mock_mapper.py          仿真用建图节点
 │       ├── launch/
 │       │   ├── robot_sim.launch.py     仿真总入口
-│       │   ├── nav2_sim.launch.py      Nav2 导航栈
+│       │   ├── nav2_sim.launch.py      Nav2 导航栈(静态定位)
+│       │   ├── nav2_amcl.launch.py     ★ Nav2 + AMCL 定位
 │       │   └── web_interface.launch.py Web + rosbridge
 │       ├── config/
 │       │   ├── nav2_sim.yaml           ★ Nav2 全部参数
+│       │   ├── amcl_nav2.yaml          ★ AMCL 定位参数
 │       │   └── sim.rviz                RViz 预置配置
 │       └── web/                        Web 控制台前端(three.js)
 │
 ├── scripts/                      ★ 一键启停 + 工具节点
 │   ├── start_slam.sh                   建图栈一键启动(按依赖顺序)
-│   ├── start_nav.sh                    导航栈一键启动
+│   ├── start_nav.sh                    导航栈一键启动(静态定位)
+│   ├── start_nav_amcl.sh               ★ 导航栈一键启动(AMCL 定位)
 │   ├── stop_slam.sh                    全部停止
 │   ├── slam_ctl.py                     交互式菜单控制台
 │   ├── imu_unit_fix.py                 IMU 单位换算 g → m/s²
@@ -214,9 +217,15 @@ ros2 service call /map_mode/start_mapping example_interfaces/srv/Trigger
 
 ### 6.3 导航流程
 
-```bash
-bash start_nav.sh
-```
+有两种定位方式，按需选一个：
+
+| 方式 | 启动命令 | `map→odom` 来源 | 对起点的要求 |
+|---|---|---|---|
+| 静态定位 | `bash start_nav.sh` | 静态恒等变换 | ⚠️ 机器人必须停在**建图起点附近** |
+| **AMCL 定位**（推荐） | `bash start_nav_amcl.sh` | `nav2_amcl` 实时计算 | ✅ 可停在任意位置（需给初始位姿） |
+
+`start_nav_amcl.sh` 会先停掉静态 `map→odom` 发布者，再启动「点云转扫描 + AMCL + Nav2」。
+详见 [第八节 · 定位](#定位mapodom-的来源)。
 
 | 服务 | 地址 |
 |---|---|
@@ -267,7 +276,7 @@ ros2 lifecycle get /controller_server           # 应为 active [3]
 ### TF 树
 
 ```
-map ──(静态恒等, 过渡方案)──> odom ──(FAST-LIO)──> base_footprint ──> livox_frame (z=0.30)
+map ──(AMCL 或 静态恒等)──> odom ──(FAST-LIO)──> base_footprint ──> livox_frame (z=0.30)
                                                                 ├──> gps_link   (z=0.60)
                                                                 └──> gimbal_base
 ```
@@ -289,7 +298,55 @@ map ──(静态恒等, 过渡方案)──> odom ──(FAST-LIO)──> base_
 - 控制器 `DWBLocalPlanner`，`motion_model: omni`（适配四轮四转全向底盘）
 - 机器人半径 0.35m，膨胀半径 0.7m
 
-> 注意：本配置**不含 AMCL**。仿真阶段 `map == odom`，由静态 TF 补齐；真机阶段 `map→odom` 目前也是静态恒等，属于重定位接入前的过渡方案。
+### 定位（`map→odom` 的来源）
+
+`nav2_sim.yaml` 里**不含定位节点**。`map→odom` 有两条来源，由启动脚本决定：
+
+| 方式 | 启动脚本 | 发布者 | 说明 |
+|---|---|---|---|
+| 静态恒等 | `start_nav.sh` | `static_transform_publisher` | 假设 `map == odom`，机器人必须停在建图起点 |
+| **AMCL** | `start_nav_amcl.sh` | `nav2_amcl`（`tf_broadcast: true`） | 用激光与 `/nav_map` 匹配，实时修正位姿 |
+
+**AMCL 数据链**（参数 `config/amcl_nav2.yaml`，启动 `launch/nav2_amcl.launch.py`）：
+
+```
+/cloud_body_filtered                    base_footprint 系点云 (来自 FAST-LIO + cloud_filter)
+      │
+      │  cloud_to_scan   切 z ∈ [0.20, 1.20] m 高度带 → 投到水平面
+      │                  切掉地面点(雷达 -7° 下视, 约 2.4m 外即打地面)
+      │                  也切掉高于 1.2m 的横梁/天花板, 避免假特征
+      ▼
+   /scan                                720 束 @ 10Hz
+      │
+      │  nav2_amcl       似然场模型(likelihood_field) + 粒子滤波
+      ▼
+TF: map → odom                          约 10Hz 持续发布
+```
+
+**两个容易踩的坑**（已在配置里处理，换环境时注意别改回去）：
+
+1. **`map_topic` 必须是 `/nav_map`，不能用 nav2 默认的 `/map`。**
+   `/map` 是 `map_manager` 实时去噪后的栅格（约 2268 个占据格），
+   `/nav_map` 是导航存档图（约 5057 格），两者内容并不相同。
+   AMCL 用 A 图定位、规划器 `static_layer` 用 B 图 —— 位姿和障碍判断就会脱节。
+
+2. **必须设 `first_map_only: true`。**
+   `/nav_map` 是 latched 的，且 `map_manager` 每秒重发一次（每次带新时间戳）。
+   不加限制时 AMCL 会把重发误判成"地图更新了"，反复重建似然场并重置粒子滤波，
+   表现为定位一直在原地重新收敛。
+
+**初始位姿怎么给**（机器人不在建图起点时）：
+
+```bash
+# 方式一(推荐): RViz 里用 "2D Pose Estimate" 点出机器人实际位置和朝向
+# 方式二: 让粒子撒满整张地图, 然后遥控走 2~3 米自然收敛
+ros2 service call /reinitialize_global_localization std_srvs/srv/Empty
+```
+
+> ⚠️ AMCL 是 2D 粒子滤波。初始误差过大时需要**移动一段距离**才能收敛；
+> 环境高度对称时可能收敛到错误位置 —— 这是算法固有局限，不是配置问题。
+> 若需要更强的 3D 重定位能力，见 [第九节 9.3](#93-待修问题按影响排序) 的方案 B（fast_gicp）。
+
 
 ---
 
@@ -297,8 +354,10 @@ map ──(静态恒等, 过渡方案)──> odom ──(FAST-LIO)──> base_
 
 ### 9.1 运行前必读
 
-1. **雷达上电位置 = 地图原点 = 导航起点。**
-   `map→odom` 是静态恒等变换，重启 FAST-LIO 会把 `odom` 原点重置到**当前物理位置**。所以每次重启后开始导航前，**必须把机器人放回建图时的出发点附近**，否则地图坐标系下位姿会整体错位。
+1. **用静态定位时，雷达上电位置 = 地图原点 = 导航起点。**
+   静态 `map→odom` 假设 `map == odom`，而重启 FAST-LIO 会把 `odom` 原点重置到**当前物理位置**，
+   所以走 `start_nav.sh` 时每次必须先让机器人回到建图出发点附近，否则地图坐标系下位姿整体错位。
+   **改用 `start_nav_amcl.sh` 就没有这个限制** —— AMCL 会自己把位姿对到 `/nav_map` 上。
    验证方法：对比实时雷达扫出的障碍与存档地图的重合度（见 9.2）。
 
 2. **建图期间不要让其他电脑跑 LivoxViewer。** 组播冲突会导致点云掉到 2-3 Hz。
