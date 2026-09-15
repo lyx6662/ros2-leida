@@ -82,13 +82,33 @@ amcl:
     pf_err: 0.05
     pf_z: 0.99
     resample_interval: 1
-    # 关闭自适应恢复: 巡检场景是已知地图, 不需要从"机器人被绑架"中恢复
-    recovery_alpha_slow: 0.0
-    recovery_alpha_fast: 0.0
+
+    # ───────────── augmented MCL 自适应恢复 ─────────────
+    # 机制: 维护长期平均权重 w_slow 与短期平均权重 w_fast。
+    #       当 w_fast < w_slow —— 也就是"所有粒子得分都很低, 说明大家都不对"
+    #       —— 就按比例把随机粒子撒到全图, 重新搜索。
+    #
+    # 为什么必须打开:
+    #   AMCL 的粒子只能被里程计"搬运", 自己不会搜索。
+    #   一旦位姿锁错(例如雷达在离地图原点 8m 处重启, odom 原点重置了,
+    #   而粒子还停在地图原点附近), 观测模型只能给粒子【降权】,
+    #   无法告诉它们"该往哪个方向挪", 粒子会永远困在错误位置,
+    #   而且不会告警(协方差照样很小, 看起来还挺自信)。
+    #   打开后: 静止时多跑几轮更新也可能靠随机撒点找回;
+    #           配合走动则收敛快得多。
+    #
+    # 取值为 AMCL 经典经验值。副作用: 偶尔有随机粒子混入, 位姿会轻微抖动。
+    recovery_alpha_slow: 0.001
+    recovery_alpha_fast: 0.1
 
     # ───────────── 更新触发条件 ─────────────
-    update_min_d: 0.25          # 平移超过 0.25m 才做一次滤波更新
-    update_min_a: 0.2           # 旋转超过 0.2rad 才做一次滤波更新
+    # ⚠️ 不满足这两个门限时 AMCL 会【完全跳过】滤波更新(不是"少更新几次"),
+    #    表现为 /amcl_pose 无输出、位姿不再被修正。
+    #    所以门限要够小, 让轻微移动或转身也能触发更新。
+    #    雷达完全静止时若需要强制更新一次:
+    #      ros2 service call /request_nomotion_update std_srvs/srv/Empty
+    update_min_d: 0.10          # 平移超过 0.10m 就更新 (原 0.25)
+    update_min_a: 0.10          # 旋转超过 0.10rad 就更新 (原 0.2)
     transform_tolerance: 0.5    # VM 上 DDS 抖动大, 放宽以避免 TF 超前报错
     save_pose_rate: 0.5
     set_initial_pose: true
