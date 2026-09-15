@@ -1,0 +1,653 @@
+diff --git a/config/MID360_config.json b/config/MID360_config.json
+index e3df5d1..aebc4ea 100644
+--- a/config/MID360_config.json
++++ b/config/MID360_config.json
+@@ -11,13 +11,13 @@
+       "log_data_port": 56500
+     },
+     "host_net_info" : {
+-      "cmd_data_ip" : "192.168.1.5",
++      "cmd_data_ip" : "192.168.1.12",
+       "cmd_data_port": 56101,
+-      "push_msg_ip": "192.168.1.5",
++      "push_msg_ip": "192.168.1.12",
+       "push_msg_port": 56201,
+-      "point_data_ip": "192.168.1.5",
++      "point_data_ip": "192.168.1.12",
+       "point_data_port": 56301,
+-      "imu_data_ip" : "192.168.1.5",
++      "imu_data_ip" : "192.168.1.12",
+       "imu_data_port": 56401,
+       "log_data_ip" : "",
+       "log_data_port": 56501
+@@ -25,7 +25,7 @@
+   },
+   "lidar_configs" : [
+     {
+-      "ip" : "192.168.1.12",
++      "ip" : "192.168.1.188",
+       "pcl_data_type" : 1,
+       "pattern_mode" : 0,
+       "extrinsic_parameter" : {
+diff --git a/config/MID360s_config.json b/config/MID360s_config.json
+index 455f740..026b61d 100644
+--- a/config/MID360s_config.json
++++ b/config/MID360s_config.json
+@@ -12,7 +12,8 @@
+     },
+     "host_net_info" : [
+       {
+-        "host_ip"        : "192.168.1.5",
++        "host_ip"        : "192.168.1.12",
++        "multicast_ip"   : "224.1.1.5",
+         "cmd_data_port"  : 56101,
+         "push_msg_port"  : 56201,
+         "point_data_port": 56301,
+@@ -23,7 +24,7 @@
+   },
+   "lidar_configs" : [
+     {
+-      "ip" : "192.168.1.12",
++      "ip" : "192.168.1.188",
+       "pcl_data_type" : 1,
+       "pattern_mode" : 0,
+       "extrinsic_parameter" : {
+diff --git a/launch/msg_AVIA2_launch.py b/launch/msg_AVIA2_launch.py
+new file mode 100644
+index 0000000..52fb30d
+--- /dev/null
++++ b/launch/msg_AVIA2_launch.py
+@@ -0,0 +1,54 @@
++import os
++from ament_index_python.packages import get_package_share_directory
++from launch import LaunchDescription
++from launch_ros.actions import Node
++import launch
++
++################### user configure parameters for ros2 start ###################
++xfer_format   = 1    # 0-Pointcloud2(PointXYZRTL), 1-customized pointcloud format
++multi_topic   = 0    # 0-All LiDARs share the same topic, 1-One LiDAR one topic
++data_src      = 0    # 0-lidar, others-Invalid data src
++publish_freq  = 10.0 # freqency of publish, 5.0, 10.0, 20.0, 50.0, etc.
++output_type   = 0
++frame_id      = 'livox_frame'
++lvx_file_path = '/home/livox/livox_test.lvx'
++cmdline_bd_code = 'livox0000000001'
++
++cur_path = os.path.split(os.path.realpath(__file__))[0] + '/'
++cur_config_path = cur_path + '../config'
++user_config_path = os.path.join(cur_config_path, 'AVIA2_config.json')
++################### user configure parameters for ros2 end #####################
++
++livox_ros2_params = [
++    {"xfer_format": xfer_format},
++    {"multi_topic": multi_topic},
++    {"data_src": data_src},
++    {"publish_freq": publish_freq},
++    {"output_data_type": output_type},
++    {"frame_id": frame_id},
++    {"lvx_file_path": lvx_file_path},
++    {"user_config_path": user_config_path},
++    {"cmdline_input_bd_code": cmdline_bd_code}
++]
++
++
++def generate_launch_description():
++    livox_driver = Node(
++        package='livox_ros_driver2',
++        executable='livox_ros_driver2_node',
++        name='livox_lidar_publisher',
++        output='screen',
++        parameters=livox_ros2_params
++        )
++
++    return LaunchDescription([
++        livox_driver,
++        # launch.actions.RegisterEventHandler(
++        #     event_handler=launch.event_handlers.OnProcessExit(
++        #         target_action=livox_rviz,
++        #         on_exit=[
++        #             launch.actions.EmitEvent(event=launch.events.Shutdown()),
++        #         ]
++        #     )
++        # )
++    ])
+diff --git a/launch/msg_HAP_launch.py b/launch/msg_HAP_launch.py
+new file mode 100644
+index 0000000..2ff3d66
+--- /dev/null
++++ b/launch/msg_HAP_launch.py
+@@ -0,0 +1,55 @@
++import os
++from ament_index_python.packages import get_package_share_directory
++from launch import LaunchDescription
++from launch_ros.actions import Node
++import launch
++
++################### user configure parameters for ros2 start ###################
++xfer_format   = 1    # 0-Pointcloud2(PointXYZRTL), 1-customized pointcloud format
++multi_topic   = 0    # 0-All LiDARs share the same topic, 1-One LiDAR one topic
++data_src      = 0    # 0-lidar, others-Invalid data src
++publish_freq  = 10.0 # freqency of publish, 5.0, 10.0, 20.0, 50.0, etc.
++output_type   = 0
++frame_id      = 'livox_frame'
++lvx_file_path = '/home/livox/livox_test.lvx'
++cmdline_bd_code = 'livox0000000001'
++
++cur_path = os.path.split(os.path.realpath(__file__))[0] + '/'
++cur_config_path = cur_path + '../config'
++rviz_config_path = os.path.join(cur_config_path, 'livox_lidar.rviz')
++user_config_path = os.path.join(cur_config_path, 'HAP_config.json')
++################### user configure parameters for ros2 end #####################
++
++livox_ros2_params = [
++    {"xfer_format": xfer_format},
++    {"multi_topic": multi_topic},
++    {"data_src": data_src},
++    {"publish_freq": publish_freq},
++    {"output_data_type": output_type},
++    {"frame_id": frame_id},
++    {"lvx_file_path": lvx_file_path},
++    {"user_config_path": user_config_path},
++    {"cmdline_input_bd_code": cmdline_bd_code}
++]
++
++
++def generate_launch_description():
++    livox_driver = Node(
++        package='livox_ros_driver2',
++        executable='livox_ros_driver2_node',
++        name='livox_lidar_publisher',
++        output='screen',
++        parameters=livox_ros2_params
++        )
++
++    return LaunchDescription([
++        livox_driver,
++        # launch.actions.RegisterEventHandler(
++        #     event_handler=launch.event_handlers.OnProcessExit(
++        #         target_action=livox_rviz,
++        #         on_exit=[
++        #             launch.actions.EmitEvent(event=launch.events.Shutdown()),
++        #         ]
++        #     )
++        # )
++    ])
+diff --git a/launch/msg_MID360_launch.py b/launch/msg_MID360_launch.py
+new file mode 100644
+index 0000000..8492c49
+--- /dev/null
++++ b/launch/msg_MID360_launch.py
+@@ -0,0 +1,54 @@
++import os
++from ament_index_python.packages import get_package_share_directory
++from launch import LaunchDescription
++from launch_ros.actions import Node
++import launch
++
++################### user configure parameters for ros2 start ###################
++xfer_format   = 1    # 0-Pointcloud2(PointXYZRTL), 1-customized pointcloud format
++multi_topic   = 0    # 0-All LiDARs share the same topic, 1-One LiDAR one topic
++data_src      = 0    # 0-lidar, others-Invalid data src
++publish_freq  = 10.0 # freqency of publish, 5.0, 10.0, 20.0, 50.0, etc.
++output_type   = 0
++frame_id      = 'livox_frame'
++lvx_file_path = '/home/livox/livox_test.lvx'
++cmdline_bd_code = 'livox0000000001'
++
++cur_path = os.path.split(os.path.realpath(__file__))[0] + '/'
++cur_config_path = cur_path + '../config'
++user_config_path = os.path.join(cur_config_path, 'MID360_config.json')
++################### user configure parameters for ros2 end #####################
++
++livox_ros2_params = [
++    {"xfer_format": xfer_format},
++    {"multi_topic": multi_topic},
++    {"data_src": data_src},
++    {"publish_freq": publish_freq},
++    {"output_data_type": output_type},
++    {"frame_id": frame_id},
++    {"lvx_file_path": lvx_file_path},
++    {"user_config_path": user_config_path},
++    {"cmdline_input_bd_code": cmdline_bd_code}
++]
++
++
++def generate_launch_description():
++    livox_driver = Node(
++        package='livox_ros_driver2',
++        executable='livox_ros_driver2_node',
++        name='livox_lidar_publisher',
++        output='screen',
++        parameters=livox_ros2_params
++        )
++
++    return LaunchDescription([
++        livox_driver,
++        # launch.actions.RegisterEventHandler(
++        #     event_handler=launch.event_handlers.OnProcessExit(
++        #         target_action=livox_rviz,
++        #         on_exit=[
++        #             launch.actions.EmitEvent(event=launch.events.Shutdown()),
++        #         ]
++        #     )
++        # )
++    ])
+diff --git a/launch/msg_MID360s_launch.py b/launch/msg_MID360s_launch.py
+new file mode 100644
+index 0000000..024097b
+--- /dev/null
++++ b/launch/msg_MID360s_launch.py
+@@ -0,0 +1,54 @@
++import os
++from ament_index_python.packages import get_package_share_directory
++from launch import LaunchDescription
++from launch_ros.actions import Node
++import launch
++
++################### user configure parameters for ros2 start ###################
++xfer_format   = 0    # 0-Pointcloud2(PointXYZRTL), 1-customized pointcloud format
++multi_topic   = 0    # 0-All LiDARs share the same topic, 1-One LiDAR one topic
++data_src      = 0    # 0-lidar, others-Invalid data src
++publish_freq  = 10.0 # freqency of publish, 5.0, 10.0, 20.0, 50.0, etc.
++output_type   = 0
++frame_id      = 'livox_frame'
++lvx_file_path = '/home/livox/livox_test.lvx'
++cmdline_bd_code = 'livox0000000001'
++
++cur_path = os.path.split(os.path.realpath(__file__))[0] + '/'
++cur_config_path = cur_path + '../config'
++user_config_path = os.path.join(cur_config_path, 'MID360s_config.json')
++################### user configure parameters for ros2 end #####################
++
++livox_ros2_params = [
++    {"xfer_format": xfer_format},
++    {"multi_topic": multi_topic},
++    {"data_src": data_src},
++    {"publish_freq": publish_freq},
++    {"output_data_type": output_type},
++    {"frame_id": frame_id},
++    {"lvx_file_path": lvx_file_path},
++    {"user_config_path": user_config_path},
++    {"cmdline_input_bd_code": cmdline_bd_code}
++]
++
++
++def generate_launch_description():
++    livox_driver = Node(
++        package='livox_ros_driver2',
++        executable='livox_ros_driver2_node',
++        name='livox_lidar_publisher',
++        output='screen',
++        parameters=livox_ros2_params
++        )
++
++    return LaunchDescription([
++        livox_driver,
++        # launch.actions.RegisterEventHandler(
++        #     event_handler=launch.event_handlers.OnProcessExit(
++        #         target_action=livox_rviz,
++        #         on_exit=[
++        #             launch.actions.EmitEvent(event=launch.events.Shutdown()),
++        #         ]
++        #     )
++        # )
++    ])
+diff --git a/launch/rviz_AVIA2_launch.py b/launch/rviz_AVIA2_launch.py
+new file mode 100644
+index 0000000..6a3ab3d
+--- /dev/null
++++ b/launch/rviz_AVIA2_launch.py
+@@ -0,0 +1,63 @@
++import os
++from ament_index_python.packages import get_package_share_directory
++from launch import LaunchDescription
++from launch_ros.actions import Node
++import launch
++
++################### user configure parameters for ros2 start ###################
++xfer_format   = 0    # 0-Pointcloud2(PointXYZRTL), 1-customized pointcloud format
++multi_topic   = 0    # 0-All LiDARs share the same topic, 1-One LiDAR one topic
++data_src      = 0    # 0-lidar, others-Invalid data src
++publish_freq  = 10.0 # freqency of publish, 5.0, 10.0, 20.0, 50.0, etc.
++output_type   = 0
++frame_id      = 'livox_frame'
++lvx_file_path = '/home/livox/livox_test.lvx'
++cmdline_bd_code = 'livox0000000001'
++
++cur_path = os.path.split(os.path.realpath(__file__))[0] + '/'
++cur_config_path = cur_path + '../config'
++rviz_config_path = os.path.join(cur_config_path, 'display_point_cloud_ROS2.rviz')
++user_config_path = os.path.join(cur_config_path, 'AVIA2_config.json')
++################### user configure parameters for ros2 end #####################
++
++livox_ros2_params = [
++    {"xfer_format": xfer_format},
++    {"multi_topic": multi_topic},
++    {"data_src": data_src},
++    {"publish_freq": publish_freq},
++    {"output_data_type": output_type},
++    {"frame_id": frame_id},
++    {"lvx_file_path": lvx_file_path},
++    {"user_config_path": user_config_path},
++    {"cmdline_input_bd_code": cmdline_bd_code}
++]
++
++
++def generate_launch_description():
++    livox_driver = Node(
++        package='livox_ros_driver2',
++        executable='livox_ros_driver2_node',
++        name='livox_lidar_publisher',
++        output='screen',
++        parameters=livox_ros2_params
++        )
++
++    livox_rviz = Node(
++            package='rviz2',
++            executable='rviz2',
++            output='screen',
++            arguments=['--display-config', rviz_config_path]
++        )
++
++    return LaunchDescription([
++        livox_driver,
++        livox_rviz,
++        # launch.actions.RegisterEventHandler(
++        #     event_handler=launch.event_handlers.OnProcessExit(
++        #         target_action=livox_rviz,
++        #         on_exit=[
++        #             launch.actions.EmitEvent(event=launch.events.Shutdown()),
++        #         ]
++        #     )
++        # )
++    ])
+diff --git a/launch/rviz_HAP_launch.py b/launch/rviz_HAP_launch.py
+new file mode 100644
+index 0000000..834a545
+--- /dev/null
++++ b/launch/rviz_HAP_launch.py
+@@ -0,0 +1,63 @@
++import os
++from ament_index_python.packages import get_package_share_directory
++from launch import LaunchDescription
++from launch_ros.actions import Node
++import launch
++
++################### user configure parameters for ros2 start ###################
++xfer_format   = 0    # 0-Pointcloud2(PointXYZRTL), 1-customized pointcloud format
++multi_topic   = 0    # 0-All LiDARs share the same topic, 1-One LiDAR one topic
++data_src      = 0    # 0-lidar, others-Invalid data src
++publish_freq  = 10.0 # freqency of publish, 5.0, 10.0, 20.0, 50.0, etc.
++output_type   = 0
++frame_id      = 'livox_frame'
++lvx_file_path = '/home/livox/livox_test.lvx'
++cmdline_bd_code = 'livox0000000001'
++
++cur_path = os.path.split(os.path.realpath(__file__))[0] + '/'
++cur_config_path = cur_path + '../config'
++rviz_config_path = os.path.join(cur_config_path, 'display_point_cloud_ROS2.rviz')
++user_config_path = os.path.join(cur_config_path, 'HAP_config.json')
++################### user configure parameters for ros2 end #####################
++
++livox_ros2_params = [
++    {"xfer_format": xfer_format},
++    {"multi_topic": multi_topic},
++    {"data_src": data_src},
++    {"publish_freq": publish_freq},
++    {"output_data_type": output_type},
++    {"frame_id": frame_id},
++    {"lvx_file_path": lvx_file_path},
++    {"user_config_path": user_config_path},
++    {"cmdline_input_bd_code": cmdline_bd_code}
++]
++
++
++def generate_launch_description():
++    livox_driver = Node(
++        package='livox_ros_driver2',
++        executable='livox_ros_driver2_node',
++        name='livox_lidar_publisher',
++        output='screen',
++        parameters=livox_ros2_params
++        )
++
++    livox_rviz = Node(
++            package='rviz2',
++            executable='rviz2',
++            output='screen',
++            arguments=['--display-config', rviz_config_path]
++        )
++
++    return LaunchDescription([
++        livox_driver,
++        livox_rviz,
++        # launch.actions.RegisterEventHandler(
++        #     event_handler=launch.event_handlers.OnProcessExit(
++        #         target_action=livox_rviz,
++        #         on_exit=[
++        #             launch.actions.EmitEvent(event=launch.events.Shutdown()),
++        #         ]
++        #     )
++        # )
++    ])
+diff --git a/launch/rviz_MID360_launch.py b/launch/rviz_MID360_launch.py
+new file mode 100644
+index 0000000..31d3480
+--- /dev/null
++++ b/launch/rviz_MID360_launch.py
+@@ -0,0 +1,63 @@
++import os
++from ament_index_python.packages import get_package_share_directory
++from launch import LaunchDescription
++from launch_ros.actions import Node
++import launch
++
++################### user configure parameters for ros2 start ###################
++xfer_format   = 0    # 0-Pointcloud2(PointXYZRTL), 1-customized pointcloud format
++multi_topic   = 0    # 0-All LiDARs share the same topic, 1-One LiDAR one topic
++data_src      = 0    # 0-lidar, others-Invalid data src
++publish_freq  = 10.0 # freqency of publish, 5.0, 10.0, 20.0, 50.0, etc.
++output_type   = 0
++frame_id      = 'livox_frame'
++lvx_file_path = '/home/livox/livox_test.lvx'
++cmdline_bd_code = 'livox0000000001'
++
++cur_path = os.path.split(os.path.realpath(__file__))[0] + '/'
++cur_config_path = cur_path + '../config'
++rviz_config_path = os.path.join(cur_config_path, 'display_point_cloud_ROS2.rviz')
++user_config_path = os.path.join(cur_config_path, 'MID360_config.json')
++################### user configure parameters for ros2 end #####################
++
++livox_ros2_params = [
++    {"xfer_format": xfer_format},
++    {"multi_topic": multi_topic},
++    {"data_src": data_src},
++    {"publish_freq": publish_freq},
++    {"output_data_type": output_type},
++    {"frame_id": frame_id},
++    {"lvx_file_path": lvx_file_path},
++    {"user_config_path": user_config_path},
++    {"cmdline_input_bd_code": cmdline_bd_code}
++]
++
++
++def generate_launch_description():
++    livox_driver = Node(
++        package='livox_ros_driver2',
++        executable='livox_ros_driver2_node',
++        name='livox_lidar_publisher',
++        output='screen',
++        parameters=livox_ros2_params
++        )
++
++    livox_rviz = Node(
++            package='rviz2',
++            executable='rviz2',
++            output='screen',
++            arguments=['--display-config', rviz_config_path]
++        )
++
++    return LaunchDescription([
++        livox_driver,
++        livox_rviz,
++        # launch.actions.RegisterEventHandler(
++        #     event_handler=launch.event_handlers.OnProcessExit(
++        #         target_action=livox_rviz,
++        #         on_exit=[
++        #             launch.actions.EmitEvent(event=launch.events.Shutdown()),
++        #         ]
++        #     )
++        # )
++    ])
+diff --git a/launch/rviz_MID360s_launch.py b/launch/rviz_MID360s_launch.py
+new file mode 100644
+index 0000000..bb86702
+--- /dev/null
++++ b/launch/rviz_MID360s_launch.py
+@@ -0,0 +1,63 @@
++import os
++from ament_index_python.packages import get_package_share_directory
++from launch import LaunchDescription
++from launch_ros.actions import Node
++import launch
++
++################### user configure parameters for ros2 start ###################
++xfer_format   = 0    # 0-Pointcloud2(PointXYZRTL), 1-customized pointcloud format
++multi_topic   = 0    # 0-All LiDARs share the same topic, 1-One LiDAR one topic
++data_src      = 0    # 0-lidar, others-Invalid data src
++publish_freq  = 10.0 # freqency of publish, 5.0, 10.0, 20.0, 50.0, etc.
++output_type   = 0
++frame_id      = 'livox_frame'
++lvx_file_path = '/home/livox/livox_test.lvx'
++cmdline_bd_code = 'livox0000000001'
++
++cur_path = os.path.split(os.path.realpath(__file__))[0] + '/'
++cur_config_path = cur_path + '../config'
++rviz_config_path = os.path.join(cur_config_path, 'display_point_cloud_ROS2.rviz')
++user_config_path = os.path.join(cur_config_path, 'MID360s_config.json')
++################### user configure parameters for ros2 end #####################
++
++livox_ros2_params = [
++    {"xfer_format": xfer_format},
++    {"multi_topic": multi_topic},
++    {"data_src": data_src},
++    {"publish_freq": publish_freq},
++    {"output_data_type": output_type},
++    {"frame_id": frame_id},
++    {"lvx_file_path": lvx_file_path},
++    {"user_config_path": user_config_path},
++    {"cmdline_input_bd_code": cmdline_bd_code}
++]
++
++
++def generate_launch_description():
++    livox_driver = Node(
++        package='livox_ros_driver2',
++        executable='livox_ros_driver2_node',
++        name='livox_lidar_publisher',
++        output='screen',
++        parameters=livox_ros2_params
++        )
++
++    livox_rviz = Node(
++            package='rviz2',
++            executable='rviz2',
++            output='screen',
++            arguments=['--display-config', rviz_config_path]
++        )
++
++    return LaunchDescription([
++        livox_driver,
++        livox_rviz,
++        # launch.actions.RegisterEventHandler(
++        #     event_handler=launch.event_handlers.OnProcessExit(
++        #         target_action=livox_rviz,
++        #         on_exit=[
++        #             launch.actions.EmitEvent(event=launch.events.Shutdown()),
++        #         ]
++        #     )
++        # )
++    ])
+diff --git a/launch/rviz_mixed.py b/launch/rviz_mixed.py
+new file mode 100644
+index 0000000..46a39c7
+--- /dev/null
++++ b/launch/rviz_mixed.py
+@@ -0,0 +1,63 @@
++import os
++from ament_index_python.packages import get_package_share_directory
++from launch import LaunchDescription
++from launch_ros.actions import Node
++import launch
++
++################### user configure parameters for ros2 start ###################
++xfer_format   = 0    # 0-Pointcloud2(PointXYZRTL), 1-customized pointcloud format
++multi_topic   = 0    # 0-All LiDARs share the same topic, 1-One LiDAR one topic
++data_src      = 0    # 0-lidar, others-Invalid data src
++publish_freq  = 10.0 # freqency of publish, 5.0, 10.0, 20.0, 50.0, etc.
++output_type   = 0
++frame_id      = 'livox_frame'
++lvx_file_path = '/home/livox/livox_test.lvx'
++cmdline_bd_code = 'livox0000000001'
++
++cur_path = os.path.split(os.path.realpath(__file__))[0] + '/'
++cur_config_path = cur_path + '../config'
++rviz_config_path = os.path.join(cur_config_path, 'display_point_cloud_ROS2.rviz')
++user_config_path = os.path.join(cur_config_path, 'mixed_HAP_MID360_config.json')
++################### user configure parameters for ros2 end #####################
++
++livox_ros2_params = [
++    {"xfer_format": xfer_format},
++    {"multi_topic": multi_topic},
++    {"data_src": data_src},
++    {"publish_freq": publish_freq},
++    {"output_data_type": output_type},
++    {"frame_id": frame_id},
++    {"lvx_file_path": lvx_file_path},
++    {"user_config_path": user_config_path},
++    {"cmdline_input_bd_code": cmdline_bd_code}
++]
++
++
++def generate_launch_description():
++    livox_driver = Node(
++        package='livox_ros_driver2',
++        executable='livox_ros_driver2_node',
++        name='livox_lidar_publisher',
++        output='screen',
++        parameters=livox_ros2_params
++        )
++
++    livox_rviz = Node(
++            package='rviz2',
++            executable='rviz2',
++            output='screen',
++            arguments=['--display-config', rviz_config_path]
++        )
++
++    return LaunchDescription([
++        livox_driver,
++        livox_rviz,
++        # launch.actions.RegisterEventHandler(
++        #     event_handler=launch.event_handlers.OnProcessExit(
++        #         target_action=livox_rviz,
++        #         on_exit=[
++        #             launch.actions.EmitEvent(event=launch.events.Shutdown()),
++        #         ]
++        #     )
++        # )
++    ])
+diff --git a/launch_ROS2/msg_MID360s_launch.py b/launch_ROS2/msg_MID360s_launch.py
+index 1c9e4ca..e00f328 100644
+--- a/launch_ROS2/msg_MID360s_launch.py
++++ b/launch_ROS2/msg_MID360s_launch.py
+@@ -5,7 +5,7 @@ from launch_ros.actions import Node
+ import launch
+ 
+ ################### user configure parameters for ros2 start ###################
+-xfer_format   = 1    # 0-Pointcloud2(PointXYZRTL), 1-customized pointcloud format
++xfer_format   = 1    # 0-Pointcloud2(PointXYZRTL), 1-customized pointcloud format (FAST_LIO 需要 CustomMsg)
+ multi_topic   = 0    # 0-All LiDARs share the same topic, 1-One LiDAR one topic
+ data_src      = 0    # 0-lidar, others-Invalid data src
+ publish_freq  = 10.0 # freqency of publish, 5.0, 10.0, 20.0, 50.0, etc.

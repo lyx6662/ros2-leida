@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>SLAM建图/Nav2导航 验证 Demo</title>
+<style>
+  body { font-family: sans-serif; background:#222; color:#ddd; margin:0; padding:10px; }
+  #bar { margin-bottom:6px; }
+  #status { font-weight:bold; padding:2px 10px; border-radius:4px; }
+  .ok { background:#2a5; } .bad { background:#a33; }
+  canvas { background:#111; cursor:crosshair; display:block; }
+  #tip { color:#aaa; font-size:13px; margin-top:4px; }
+  #info { float:right; font-size:13px; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <span id="status" class="bad">连接中...</span>
+  <span id="mode">模式: --</span>
+  <span id="info"></span>
+</div>
+<canvas id="cv" width="880" height="880"></canvas>
+<div id="tip">操作: 在地图上点击 = 发送导航目标 / 按住Shift点击 = 手动设置位姿(暂不支持) | 绿线=全局路径</div>
+
+<script src="roslib.min.js"></script>
+<script>
+// ---------- 常量(与 map_manager 一致) ----------
+const GRID_N = 880, RES = 0.05, HALF = 22.0;  // 44m x 44m, 5cm/格
+const PX_PER_M = 880 / (GRID_N * RES);         // 每米像素 = 20
+
+// ---------- rosbridge 连接 ----------
+const ros = new ROSLIB.Ros({ url: 'ws://' + location.hostname + ':9090' });
+ros.on('connection', () => { console.log('[demo] rosbridge 已连接'); document.getElementById('status').textContent='已连接'; document.getElementById('status').className='ok'; });
+ros.on('error', () => { console.log('[demo] rosbridge 连接失败'); document.getElementById('status').textContent='连接失败'; });
+ros.on('close', () => { console.log('[demo] rosbridge 断开'); document.getElementById('status').textContent='已断开'; document.getElementById('status').className='bad'; });
+
+// ---------- 状态 ----------
+let grid = null;            // OccupancyGrid data
+let robot = null;           // {x,y,yaw}
+let pathPts = [];           // 全局路径
+
+// 模式显示
+new ROSLIB.Topic({ ros, name:'/map_mode', messageType:'std_msgs/String' })
+  .subscribe(m => document.getElementById('mode').textContent = '模式: ' + m.data);
+
+// 导航图
+new ROSLIB.Topic({ ros, name:'/nav_map', messageType:'nav_msgs/OccupancyGrid' })
+  .subscribe(m => { grid = m; draw(); });
+
+// 机器人位姿(odom 与 map 重合,直接用)
+new ROSLIB.Topic({ ros, name:'/Odometry', messageType:'nav_msgs/Odometry' })
+  .subscribe(m => {
+    const p = m.pose.pose.position, q = m.pose.pose.orientation;
+    robot = { x:p.x, y:p.y, yaw: Math.atan2(2*(q.w*q.z+q.x*q.y), 1-2*(q.z*q.z+q.y*q.y)) };
+    document.getElementById('info').textContent =
+      '位姿: ' + p.x.toFixed(2) + ', ' + p.y.toFixed(2) + ' m';
+    draw();
+  });
+
+// 全局路径
+new ROSLIB.Topic({ ros, name:'/plan', messageType:'nav_msgs/Path', throttle_rate:200 })
+  .subscribe(m => { pathPts = m.poses.map(ps => ps.pose.position); draw(); });
+
+// 点击发送目标
+const cv = document.getElementById('cv');
+cv.addEventListener('click', e => {
+  const r = cv.getBoundingClientRect();
+  const px = e.clientX - r.left, py = e.clientY - r.top;
+  // 像素->世界: 栅格第0行对应 y=origin(南), 正向映射不翻转
+  const wx = (px / PX_PER_M) - HALF;
+  const wy = HALF - (py / PX_PER_M);
+  const goal = new ROSLIB.Message({
+    header: { frame_id: 'map' },
+    pose: { position: { x: wx, y: wy, z: 0 },
+            orientation: { x:0, y:0, z:0, w:1 } }
+  });
+  new ROSLIB.Topic({ ros, name:'/goal_pose', messageType:'geometry_msgs/PoseStamped' })
+    .publish(goal);
+  console.log('[demo] 点击像素(%d,%d) → 目标(%.2f, %.2f) m', px, py, wx, wy);
+  document.getElementById('info').textContent = '目标: ' + wx.toFixed(2) + ', ' + wy.toFixed(2);
+});
+
+// ---------- 绘制 ----------
+function draw() {
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#111'; ctx.fillRect(0,0,880,880);
+
+  // 栅格
+  if (grid) {
+    const d = grid.data, img = ctx.createImageData(GRID_N, GRID_N);
+    for (let row = 0; row < GRID_N; row++) {
+      for (let col = 0; col < GRID_N; col++) {
+        const v = d[row*GRID_N + col];
+        const i = (row*GRID_N + col)*4;
+        if (v === 100)      { img.data[i]=40;  img.data[i+1]=40;  img.data[i+2]=40;  img.data[i+3]=255; } // 占据=黑
+        else if (v === 0)   { img.data[i]=245; img.data[i+1]=245; img.data[i+2]=245; img.data[i+3]=255; } // 自由=白
+        else                { img.data[i]=60;  img.data[i+1]=60;  img.data[i+2]=70;  img.data[i+3]=255; } // 未知=灰
+      }
+    }
+    // canvas y 向下 = 世界 y 向南(第0行是y最小), 需上下翻转显示成北朝上
+    const tmp = document.createElement('canvas');
+    tmp.width = GRID_N; tmp.height = GRID_N;
+    tmp.getContext('2d').putImageData(img, 0, 0);
+    ctx.save();
+    ctx.translate(0, 880); ctx.scale(1, -1);
+    ctx.drawImage(tmp, 0, 0, 880, 880);
+    ctx.restore();
+  }
+
+  // 路径
+  if (pathPts.length) {
+    ctx.strokeStyle = '#2f2'; ctx.lineWidth = 2; ctx.beginPath();
+    pathPts.forEach((p, i) => {
+      const px = (p.x + HALF) * PX_PER_M, py = 880 - (p.y + HALF) * PX_PER_M;
+      i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+    });
+    ctx.stroke();
+  }
+
+  // 机器人
+  if (robot) {
+    const px = (robot.x + HALF) * PX_PER_M, py = 880 - (robot.y + HALF) * PX_PER_M;
+    ctx.fillStyle = '#e33';
+    ctx.beginPath(); ctx.arc(px, py, 8, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#e33'; ctx.lineWidth = 4; ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.lineTo(px + 18*Math.cos(robot.yaw), py - 18*Math.sin(robot.yaw));
+    ctx.stroke();
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+# ───────────── colcon 构建产物 ─────────────
+build/
+install/
+log/
+
+# ───────────── 运行时日志 ─────────────
+logs/
+*.log
+
+# ───────────── 第三方源码 ─────────────
+# 体积大且属于上游仓库, 不直接入库;
+# 本地改动见 third_party_patches/*.patch
+src/FAST_LIO_ROS2/
+src/livox_ros_driver2/
+
+# ───────────── 现场巡检照片 ─────────────
+# 如需上传请注释掉此行
+photos/
+
+# ───────────── Python ─────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+
+# ───────────── 编辑器 / 系统 ─────────────
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
