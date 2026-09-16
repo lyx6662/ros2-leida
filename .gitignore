@@ -8,10 +8,39 @@ logs/
 *.log
 
 # ───────────── 第三方源码 ─────────────
-# 体积大且属于上游仓库, 不直接入库;
-# 本地改动见 third_party_patches/*.patch
-src/FAST_LIO_ROS2/
-src/livox_ros_driver2/
+# 目的: 让工作区【自包含】, 便于整体迁移到工控机。
+#   git clone 之后直接 colcon build 就能编译, 不需要重新下载上游 + 打补丁。
+#   补丁仍保留在 third_party_patches/, 供将来对照上游升级时使用。
+#
+# ⚠️ 踩过的坑: .gitignore 【不支持行尾注释】!
+#    模式必须独占一行, 注释要单独成行。
+#    写成 "src/xxx/doc/   # 注释" 会被当成一个整体模式, 永远匹配不上任何文件。
+#
+# 入库的是净源码(两个库合计约 1.8M)。以下体积巨大的非源码内容全部排除:
+
+# 128M 上游文档图片(含 50M / 35M 两个 GIF)。不影响编译, 故不入库
+src/FAST_LIO_ROS2/doc/
+
+# 79M FAST-LIO 运行时调试输出(mat_pre.txt 单文件就 79M)
+src/FAST_LIO_ROS2/Log/
+
+# 累积扫描点云数据
+src/FAST_LIO_ROS2/PCD/
+
+# 上游 git 历史: FAST_LIO 的 .git 有 127M, ikd-Tree 也有自己的 .git。
+# 为保证工作区自包含, 已把这三个改名为 .git_upstream —— 这样父仓库才能正常
+# 跟踪里面的源文件(否则 git 会把它们当成"嵌入仓库", 只存 commit 指针不存内容)。
+# 不需要上游历史时可直接删除, 不影响编译:
+#   src/FAST_LIO_ROS2/.git_upstream
+#   src/FAST_LIO_ROS2/include/ikd-Tree/.git_upstream
+#   src/livox_ros_driver2/.git_upstream
+src/**/.git/
+src/**/.git_upstream/
+
+# 第三方库内部若嵌套构建产物, 一并排除
+src/**/build/
+src/**/devel/
+src/**/install/
 
 # ───────────── 现场巡检照片 ─────────────
 # 如需上传请注释掉此行
